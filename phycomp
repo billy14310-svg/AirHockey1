@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>2-Player Air Hockey</title>
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
 <style>
-  html,body{height:100%;margin:0;background:#000;overflow:hidden}
-  canvas{display:block;background:#1a5c1a;width:100%;height:100%}
+  html,body{height:100%;margin:0;background:#000;overflow:hidden;touch-action:none}
+  canvas{display:block;background:#1a5c1a;width:100%;height:100%;touch-action:none}
   #scoreBoard{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:2em;font-family:Arial;text-align:center;pointer-events:none;z-index:10}
   #p1Score{position:fixed;top:10px;left:10px;color:#fff;font-size:1.5em;font-family:Arial;z-index:10}
   #p2Score{position:fixed;bottom:10px;left:10px;color:#fff;font-size:1.5em;font-family:Arial;z-index:10}
@@ -43,24 +43,31 @@
   };
 
   const mallets = {
-    p1: { x: W / 2, y: H - 50, radius: 25, touchId: null },
-    p2: { x: W / 2, y: 50, radius: 25, touchId: null }
+    p1: { x: W / 2, y: H - 50, radius: 25, touchId: null, prevX: W / 2, prevY: H - 50 },
+    p2: { x: W / 2, y: 50, radius: 25, touchId: null, prevX: W / 2, prevY: 50 }
   };
 
   let score = { p1: 0, p2: 0 };
   let goalScored = null;
+  let freezeTime = 0;
+  let gameOver = false;
+  let winner = null;
   const gravity = 0;
-  const friction = 0.98;
+  const friction = 0.996;
   const restitution = 0.95;
   const centerLineY = H / 2;
-  const goalWidth = 80;
+  const goalWidth = 150;
   const goalX1 = (W - goalWidth) / 2;
   const goalX2 = goalX1 + goalWidth;
 
-  // Touch tracking
+  // Touch and mouse tracking
   const touches = {};
+  let mouseX = 0;
+  let mouseY = 0;
+  let mouseDown = false;
 
   document.addEventListener('touchstart', (e) => {
+    e.preventDefault();
     for (let touch of e.changedTouches) {
       touches[touch.identifier] = { x: touch.clientX, y: touch.clientY };
       
@@ -74,16 +81,17 @@
   });
 
   document.addEventListener('touchmove', (e) => {
+    e.preventDefault();
     for (let touch of e.changedTouches) {
       if (touches[touch.identifier]) {
         touches[touch.identifier].x = touch.clientX;
         touches[touch.identifier].y = touch.clientY;
       }
     }
-    e.preventDefault();
   });
 
   document.addEventListener('touchend', (e) => {
+    e.preventDefault();
     for (let touch of e.changedTouches) {
       if (mallets.p1.touchId === touch.identifier) {
         mallets.p1.touchId = null;
@@ -95,19 +103,98 @@
     }
   });
 
+  // Mouse tracking
+  document.addEventListener('mousemove', (e) => {
+    mouseX = e.clientX;
+    mouseY = e.clientY;
+    
+    if (mouseDown && freezeTime <= 0) {
+      if (mouseY > centerLineY) {
+        mallets.p1.prevX = mallets.p1.x;
+        mallets.p1.prevY = mallets.p1.y;
+        mallets.p1.x = mouseX;
+        mallets.p1.y = Math.max(mouseY, centerLineY + 10); // P1 stays in bottom half
+      } else {
+        mallets.p2.prevX = mallets.p2.x;
+        mallets.p2.prevY = mallets.p2.y;
+        mallets.p2.x = mouseX;
+        mallets.p2.y = Math.min(mouseY, centerLineY - 10); // P2 stays in top half
+      }
+    }
+  });
+
+  document.addEventListener('mousedown', (e) => {
+    mouseDown = true;
+  });
+
+  document.addEventListener('mouseup', (e) => {
+    mouseDown = false;
+  });
+
+  // Handle play again button click
+  canvas.addEventListener('click', (e) => {
+    if (gameOver) {
+      const buttonX = W / 2 - 100;
+      const buttonY = H / 2 + 80;
+      const buttonWidth = 200;
+      const buttonHeight = 60;
+      
+      if (e.clientX > buttonX && e.clientX < buttonX + buttonWidth &&
+          e.clientY > buttonY && e.clientY < buttonY + buttonHeight) {
+        resetGame();
+      }
+    }
+  });
+
+  // Handle keyboard shortcuts for scoring
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '\\') {
+      score.p1++;
+      goalScored = 'P1';
+      checkWinCondition();
+      if (!gameOver) {
+        resetPuck();
+        freezeTime = 5;
+        mallets.p1.x = W / 2;
+        mallets.p1.y = H - 50;
+        mallets.p2.x = W / 2;
+        mallets.p2.y = 50;
+      }
+    } else if (e.key === '/') {
+      score.p2++;
+      goalScored = 'P2';
+      checkWinCondition();
+      if (!gameOver) {
+        resetPuck();
+        freezeTime = 5;
+        mallets.p1.x = W / 2;
+        mallets.p1.y = H - 50;
+        mallets.p2.x = W / 2;
+        mallets.p2.y = 50;
+      }
+    }
+  });
+
   function updateMallets() {
-    // Update P1 mallet
+    // Don't move mallets if frozen after a goal
+    if (freezeTime > 0) return;
+    
+    // Update P1 mallet (bottom half - can move anywhere in bottom half)
     if (mallets.p1.touchId !== null && touches[mallets.p1.touchId]) {
       let touch = touches[mallets.p1.touchId];
+      mallets.p1.prevX = mallets.p1.x;
+      mallets.p1.prevY = mallets.p1.y;
       mallets.p1.x = touch.x;
-      mallets.p1.y = Math.min(touch.y, centerLineY - 10);
+      mallets.p1.y = Math.max(touch.y, centerLineY + 10); // Keep in bottom half
     }
     
-    // Update P2 mallet
+    // Update P2 mallet (top half - can move anywhere in top half)
     if (mallets.p2.touchId !== null && touches[mallets.p2.touchId]) {
       let touch = touches[mallets.p2.touchId];
+      mallets.p2.prevX = mallets.p2.x;
+      mallets.p2.prevY = mallets.p2.y;
       mallets.p2.x = touch.x;
-      mallets.p2.y = Math.max(touch.y, centerLineY + 10);
+      mallets.p2.y = Math.min(touch.y, centerLineY - 10); // Keep in top half
     }
   }
 
@@ -130,28 +217,44 @@
       puck.vx = -Math.abs(puck.vx) * restitution;
     }
 
-    // Goal detection (top)
-    if (puck.y < 0 && puck.x > goalX1 && puck.x < goalX2) {
+    // Goal detection (top goal)
+    if (puck.y - puck.radius < 0 && puck.x > goalX1 && puck.x < goalX2) {
       score.p1++;
       goalScored = 'P1';
-      resetPuck();
+      checkWinCondition();
+      if (!gameOver) {
+        resetPuck();
+        freezeTime = 5; // 5 second freeze
+        mallets.p1.x = W / 2;
+        mallets.p1.y = H - 50;
+        mallets.p2.x = W / 2;
+        mallets.p2.y = 50;
+      }
     }
 
-    // Goal detection (bottom)
-    if (puck.y > H && puck.x > goalX1 && puck.x < goalX2) {
+    // Goal detection (bottom goal)
+    if (puck.y + puck.radius > H && puck.x > goalX1 && puck.x < goalX2) {
       score.p2++;
       goalScored = 'P2';
-      resetPuck();
+      checkWinCondition();
+      if (!gameOver) {
+        resetPuck();
+        freezeTime = 5; // 5 second freeze
+        mallets.p1.x = W / 2;
+        mallets.p1.y = H - 50;
+        mallets.p2.x = W / 2;
+        mallets.p2.y = 50;
+      }
     }
 
-    // Center line collision (puck can't cross)
-    if (puck.y < centerLineY && puck.vy < 0) {
+    // Wall collisions (top/bottom) - puck bounces off top and bottom walls outside goal area
+    if (puck.y - puck.radius < 0 && (puck.x < goalX1 || puck.x > goalX2)) {
+      puck.y = puck.radius;
       puck.vy = Math.abs(puck.vy) * restitution;
-      puck.y = centerLineY;
     }
-    if (puck.y > centerLineY && puck.vy > 0) {
+    if (puck.y + puck.radius > H && (puck.x < goalX1 || puck.x > goalX2)) {
+      puck.y = H - puck.radius;
       puck.vy = -Math.abs(puck.vy) * restitution;
-      puck.y = centerLineY;
     }
 
     // Mallet collisions
@@ -160,7 +263,7 @@
       const dy = puck.y - mallet.y;
       const dist = Math.hypot(dx, dy);
       
-      if (dist < puck.radius + mallet.radius) {
+      if (dist < puck.radius + mallet.radius && dist > 0) {
         const nx = dx / dist;
         const ny = dy / dist;
         
@@ -169,10 +272,22 @@
         puck.x += nx * overlap;
         puck.y += ny * overlap;
         
-        // Reflect velocity
-        const speed = 400;
-        puck.vx = nx * speed;
-        puck.vy = ny * speed;
+        // Calculate mallet velocity
+        const malletVx = mallet.x - mallet.prevX;
+        const malletVy = mallet.y - mallet.prevY;
+        
+        // Check if mallet is moving towards the puck
+        const relVelDot = malletVx * nx + malletVy * ny;
+        
+        // Only apply collision if mallet is moving towards puck
+        if (relVelDot > 0 || Math.hypot(malletVx, malletVy) === 0) {
+          // Puck speed depends only on mallet speed
+          const malletSpeed = Math.hypot(malletVx, malletVy);
+          const totalSpeed = malletSpeed * 40;
+          
+          puck.vx = nx * totalSpeed + malletVx;
+          puck.vy = ny * totalSpeed + malletVy;
+        }
       }
     });
   }
@@ -182,6 +297,30 @@
     puck.y = H / 2;
     puck.vx = 0;
     puck.vy = 0;
+  }
+
+  function checkWinCondition() {
+    const maxScore = Math.max(score.p1, score.p2);
+    const scoreDiff = Math.abs(score.p1 - score.p2);
+    
+    // Win condition: one player reaches 7 with 2 point lead, or higher in overtime with 2 point lead
+    if (maxScore >= 7 && scoreDiff >= 2) {
+      gameOver = true;
+      winner = score.p1 > score.p2 ? 'P1' : 'P2';
+    }
+  }
+
+  function resetGame() {
+    score = { p1: 0, p2: 0 };
+    gameOver = false;
+    winner = null;
+    goalScored = null;
+    freezeTime = 0;
+    resetPuck();
+    mallets.p1.x = W / 2;
+    mallets.p1.y = H - 50;
+    mallets.p2.x = W / 2;
+    mallets.p2.y = 50;
   }
 
   function draw() {
@@ -245,6 +384,45 @@
         document.getElementById('message').textContent = '';
       }, 1000);
     }
+
+    // Draw freeze timer
+    if (freezeTime > 0) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(W / 2 - 40, centerLineY - 30, 80, 60);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 40px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(Math.ceil(freezeTime), W / 2, centerLineY);
+      ctx.restore();
+    }
+
+    // Draw game over screen
+    if (gameOver) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+      ctx.fillRect(0, 0, W, H);
+      
+      ctx.fillStyle = '#ffff00';
+      ctx.font = 'bold 60px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${winner} WINS!`, W / 2, H / 2 - 80);
+      
+      ctx.fillStyle = '#fff';
+      ctx.font = '40px Arial';
+      ctx.fillText(`${score.p1} - ${score.p2}`, W / 2, H / 2);
+      
+      // Draw play again button
+      ctx.fillStyle = '#4CAF50';
+      ctx.fillRect(W / 2 - 100, H / 2 + 80, 200, 60);
+      ctx.fillStyle = '#fff';
+      ctx.font = '30px Arial';
+      ctx.fillText('PLAY AGAIN', W / 2, H / 2 + 115);
+      
+      ctx.restore();
+    }
   }
 
   let lastTime = Date.now();
@@ -252,6 +430,12 @@
     const now = Date.now();
     const dt = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
+
+    // Decrement freeze timer
+    if (freezeTime > 0) {
+      freezeTime -= dt;
+      if (freezeTime < 0) freezeTime = 0;
+    }
 
     updateMallets();
     updatePuck(dt);
