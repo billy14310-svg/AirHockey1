@@ -283,7 +283,7 @@
         if (relVelDot > 0 || Math.hypot(malletVx, malletVy) === 0) {
           // Puck speed depends only on mallet speed
           const malletSpeed = Math.hypot(malletVx, malletVy);
-          const totalSpeed = malletSpeed * 90;
+          const totalSpeed = malletSpeed * 60;
           
           puck.vx = nx * totalSpeed + malletVx;
           puck.vy = ny * totalSpeed + malletVy;
