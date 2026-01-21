@@ -283,10 +283,16 @@
         if (relVelDot > 0 || Math.hypot(malletVx, malletVy) === 0) {
           // Puck speed depends only on mallet speed
           const malletSpeed = Math.hypot(malletVx, malletVy);
-          const totalSpeed = malletSpeed * 40;
-          
-          puck.vx = nx * totalSpeed + malletVx;
-          puck.vy = ny * totalSpeed + malletVy;
+          if (malletSpeed < 0.01) {
+                const dot = puck.vx * nx + puck.vy * ny;
+                puck.vx = puck.vx - 2 * dot * nx;
+                puck.vy = puck.vy - 2 * dot * ny;
+            } else {
+    // Original behavior when mallet is moving
+                const totalSpeed = malletSpeed * 40;
+                puck.vx = nx * totalSpeed + malletVx;
+                puck.vy = ny * totalSpeed + malletVy;
+            }
         }
       }
     });
