@@ -53,7 +53,7 @@
   let gameOver = false;
   let winner = null;
   const gravity = 0;
-  const friction = 0.993;
+  const friction = 0.996;
   const restitution = 0.95;
   const centerLineY = H / 2;
   const goalWidth = 150;
@@ -263,7 +263,7 @@
       const dy = puck.y - mallet.y;
       const dist = Math.hypot(dx, dy);
       
-      if (dist < puck.radius + mallet.radius) {
+      if (dist < puck.radius + mallet.radius && dist > 0) {
         const nx = dx / dist;
         const ny = dy / dist;
         
@@ -276,13 +276,18 @@
         const malletVx = mallet.x - mallet.prevX;
         const malletVy = mallet.y - mallet.prevY;
         
-        // Impart mallet velocity to puck with mallet speed affecting launch
-        const baseSpeed = 400
-        const malletSpeed = Math.hypot(malletVx, malletVy);
-        const totalSpeed = baseSpeed + malletSpeed * 5;
+        // Check if mallet is moving towards the puck
+        const relVelDot = malletVx * nx + malletVy * ny;
         
-        puck.vx = nx * totalSpeed + malletVx;
-        puck.vy = ny * totalSpeed + malletVy;
+        // Only apply collision if mallet is moving towards puck
+        if (relVelDot > 0 || Math.hypot(malletVx, malletVy) === 0) {
+          // Puck speed depends only on mallet speed
+          const malletSpeed = Math.hypot(malletVx, malletVy);
+          const totalSpeed = malletSpeed * 6;
+          
+          puck.vx = nx * totalSpeed + malletVx;
+          puck.vy = ny * totalSpeed + malletVy;
+        }
       }
     });
   }
